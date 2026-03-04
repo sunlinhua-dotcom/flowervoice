@@ -754,8 +754,11 @@ exportPdfBtn.addEventListener('click', async () => {
         showToast('PDF 库加载中，请稍后重试');
         return;
     }
+    if (!meetingData) {
+        showToast('暂无会议数据');
+        return;
+    }
 
-    const pdfContent = $('pdfContent');
     const originalBtn = exportPdfBtn.innerHTML;
     exportPdfBtn.disabled = true;
     exportPdfBtn.innerHTML = `
@@ -765,25 +768,30 @@ exportPdfBtn.addEventListener('click', async () => {
     正在生成 PDF...
   `;
 
-    // Add PDF-friendly styles
-    pdfContent.classList.add('pdf-rendering');
-
-    const title = meetingData?.title || '会议记录';
+    const title = meetingData.title || '会议记录';
     const dateStr = new Date().toISOString().split('T')[0];
-    // Use a safe filename - sanitize and ensure .pdf extension
     const safeTitle = title.replace(/[\\/:*?"<>|]/g, '_').substring(0, 50);
     const pdfFilename = `VoiceMeet_${safeTitle}_${dateStr}.pdf`;
 
+    // Build clean HTML for PDF with inline styles
+    const pdfHtml = buildPdfHtml(meetingData);
+
+    // Create a hidden container
+    const container = document.createElement('div');
+    container.style.cssText = 'position:fixed;top:0;left:0;width:210mm;z-index:-9999;opacity:0;pointer-events:none;';
+    container.innerHTML = pdfHtml;
+    document.body.appendChild(container);
+
     try {
         const opt = {
-            margin: [10, 10, 10, 10],
+            margin: [8, 8, 8, 8],
             filename: pdfFilename,
-            image: { type: 'jpeg', quality: 0.98 },
+            image: { type: 'jpeg', quality: 0.95 },
             html2canvas: {
                 scale: 2,
                 useCORS: true,
-                letterRendering: true,
-                backgroundColor: '#ffffff'
+                backgroundColor: '#ffffff',
+                width: 794 // A4 width in px at 96dpi
             },
             jsPDF: {
                 unit: 'mm',
@@ -793,11 +801,9 @@ exportPdfBtn.addEventListener('click', async () => {
             pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
         };
 
-        // Generate PDF as blob and open in new tab (works on mobile)
-        const pdfBlob = await html2pdf().set(opt).from(pdfContent).outputPdf('blob');
+        const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
         const blobUrl = URL.createObjectURL(new Blob([pdfBlob], { type: 'application/pdf' }));
 
-        // Try download first
         const link = document.createElement('a');
         link.href = blobUrl;
         link.download = pdfFilename;
@@ -806,22 +812,192 @@ exportPdfBtn.addEventListener('click', async () => {
         link.click();
         document.body.removeChild(link);
 
-        // Also open in new tab as fallback (for mobile Safari)
-        setTimeout(() => {
-            window.open(blobUrl, '_blank');
-        }, 500);
-
-        showToast('PDF 已生成，请在新标签页中保存');
+        setTimeout(() => { window.open(blobUrl, '_blank'); }, 500);
+        showToast('PDF 已生成');
     } catch (error) {
         console.error('PDF export error:', error);
         showToast('PDF 生成失败，请重试');
     }
 
-    // Remove PDF styles
-    pdfContent.classList.remove('pdf-rendering');
+    document.body.removeChild(container);
     exportPdfBtn.disabled = false;
     exportPdfBtn.innerHTML = originalBtn;
 });
+
+function buildPdfHtml(m) {
+    const S = {
+        page: 'font-family:Inter,-apple-system,Helvetica,Arial,sans-serif;color:#1a1a1a;background:#fff;padding:24px;line-height:1.6;font-size:13px;',
+        h1: 'font-size:22px;font-weight:700;color:#1a1a1a;margin:0 0 6px;',
+        meta: 'font-size:12px;color:#666;margin-bottom:12px;',
+        summary: 'font-size:13px;color:#333;line-height:1.7;margin-bottom:20px;padding:12px 14px;background:#f8f9fa;border-radius:8px;border-left:4px solid #6366f1;',
+        section: 'margin-bottom:20px;page-break-inside:avoid;',
+        sectionTitle: 'font-size:15px;font-weight:700;color:#1a1a1a;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #6366f1;',
+        card: 'background:#f8f9fa;border:1px solid #e0e0e0;border-radius:8px;padding:12px;margin-bottom:8px;page-break-inside:avoid;',
+        highlight: 'background:#fffde7;border:1px solid #f9a825;border-radius:8px;padding:10px 12px;margin-bottom:6px;font-size:13px;color:#333;',
+        tagMale: 'display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;background:#e3f2fd;color:#1565c0;margin-right:4px;',
+        tagFemale: 'display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;background:#fce4ec;color:#c62828;margin-right:4px;',
+        tagRole: 'display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;background:#ede7f6;color:#4527a0;margin-right:4px;',
+        tagAge: 'display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;background:#fff3e0;color:#e65100;margin-right:4px;',
+        quote: 'font-size:12px;color:#555;font-style:italic;padding-left:10px;border-left:3px solid #6366f1;margin:4px 0;',
+        actionItem: 'padding:10px 12px;background:#f8f9fa;border:1px solid #e0e0e0;border-radius:8px;margin-bottom:6px;page-break-inside:avoid;',
+        actionTask: 'font-size:13px;font-weight:600;color:#1a1a1a;margin-bottom:4px;',
+        actionMeta: 'font-size:11px;color:#666;',
+        discSection: 'background:#f8f9fa;border:1px solid #e0e0e0;border-radius:8px;padding:14px;margin-bottom:10px;page-break-inside:avoid;',
+        discNum: 'display:inline-block;width:24px;height:24px;background:#6366f1;color:#fff;border-radius:50%;text-align:center;line-height:24px;font-size:12px;font-weight:700;margin-right:8px;',
+        discTitle: 'font-size:14px;font-weight:600;color:#1a1a1a;',
+        discSummary: 'background:#ede7f6;color:#4a148c;padding:8px 10px;border-radius:6px;font-size:12px;margin:8px 0;',
+        discRecord: 'font-size:12px;color:#333;line-height:1.6;margin:8px 0;',
+        dialogue: 'background:#f5f5f5;border-radius:6px;padding:8px 10px;margin:4px 0;font-size:12px;',
+        decision: 'padding:8px 12px;background:#f8f9fa;border:1px solid #e0e0e0;border-radius:8px;margin-bottom:6px;font-size:13px;color:#1a1a1a;',
+        risk: 'padding:8px 12px;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;margin-bottom:6px;font-size:13px;color:#333;',
+    };
+
+    let html = `<div style="${S.page}">`;
+
+    // Header
+    html += `<div style="margin-bottom:16px;">`;
+    html += `<h1 style="${S.h1}">📋 ${esc(m.title || '会议记录')}</h1>`;
+    html += `<div style="${S.meta}">`;
+    if (m.date) html += `📅 ${esc(m.date)}　`;
+    if (m.duration) html += `⏱️ ${esc(m.duration)}　`;
+    if (m.meeting_atmosphere) html += `🎯 ${esc(m.meeting_atmosphere)}`;
+    html += `</div>`;
+    if (m.summary) html += `<div style="${S.summary}">${esc(m.summary)}</div>`;
+    html += `</div>`;
+
+    // Key Highlights
+    const highlights = m.key_highlights || [];
+    if (highlights.length > 0) {
+        html += `<div style="${S.section}">`;
+        html += `<div style="${S.sectionTitle}">⚠️ 重要提要</div>`;
+        highlights.forEach(h => {
+            html += `<div style="${S.highlight}">⚠️ ${esc(h.replace(/^⚠️\s*/, ''))}</div>`;
+        });
+        html += `</div>`;
+    }
+
+    // Participants
+    const participants = m.participants || [];
+    if (participants.length > 0) {
+        html += `<div style="${S.section}">`;
+        html += `<div style="${S.sectionTitle}">👥 参会人员</div>`;
+        participants.forEach((p, i) => {
+            const gTag = p.gender?.includes('男') ? S.tagMale : p.gender?.includes('女') ? S.tagFemale : S.tagMale;
+            const icon = p.gender?.includes('男') ? '👨' : p.gender?.includes('女') ? '👩' : '👤';
+            html += `<div style="${S.card}">`;
+            html += `<div style="font-size:14px;font-weight:600;margin-bottom:4px;">${icon} ${esc(p.name || '参会者' + (i + 1))}</div>`;
+            html += `<div style="margin-bottom:6px;">`;
+            if (p.gender) html += `<span style="${gTag}">${esc(p.gender)}</span>`;
+            if (p.age_range) html += `<span style="${S.tagAge}">${esc(p.age_range)}</span>`;
+            if (p.role) html += `<span style="${S.tagRole}">${esc(p.role)}</span>`;
+            html += `</div>`;
+            if (p.speaking_summary) html += `<div style="font-size:12px;color:#333;margin-bottom:4px;">${esc(p.speaking_summary)}</div>`;
+            if (p.key_quotes?.length > 0) {
+                p.key_quotes.forEach(q => {
+                    html += `<div style="${S.quote}">"${esc(q)}"</div>`;
+                });
+            }
+            html += `</div>`;
+        });
+        html += `</div>`;
+    }
+
+    // Action Items
+    const actions = m.action_items || [];
+    if (actions.length > 0) {
+        html += `<div style="${S.section}">`;
+        html += `<div style="${S.sectionTitle}">✅ 待办事项</div>`;
+        actions.forEach((item, i) => {
+            html += `<div style="${S.actionItem}">`;
+            html += `<div style="${S.actionTask}">${i + 1}. ${esc(item.task)}</div>`;
+            if (item.context) html += `<div style="font-size:11px;color:#666;margin-bottom:4px;">${esc(item.context)}</div>`;
+            html += `<div style="${S.actionMeta}">`;
+            if (item.assignee) html += `👤 ${esc(item.assignee)}　`;
+            if (item.deadline) html += `📅 ${esc(item.deadline)}　`;
+            if (item.priority) html += `${item.priority === '高' ? '🔴' : item.priority === '中' ? '🟡' : '🟢'} ${esc(item.priority)}`;
+            html += `</div></div>`;
+        });
+        html += `</div>`;
+    }
+
+    // Detailed Discussion
+    const discussions = m.detailed_discussion || m.agenda_items || [];
+    if (discussions.length > 0) {
+        html += `<div style="${S.section}">`;
+        html += `<div style="${S.sectionTitle}">📋 详细讨论记录</div>`;
+        discussions.forEach((sec, i) => {
+            const num = sec.section_number || (i + 1);
+            html += `<div style="${S.discSection}">`;
+            html += `<div style="margin-bottom:8px;"><span style="${S.discNum}">${num}</span><span style="${S.discTitle}">${esc(sec.topic)}</span>`;
+            if (sec.time_estimate) html += `<span style="font-size:11px;color:#666;margin-left:8px;">${esc(sec.time_estimate)}</span>`;
+            html += `</div>`;
+            if (sec.section_summary) html += `<div style="${S.discSummary}">📌 ${esc(sec.section_summary)}</div>`;
+            if (sec.highlights?.length > 0) {
+                sec.highlights.forEach(h => {
+                    html += `<div style="${S.highlight}">${esc(h)}</div>`;
+                });
+            }
+            if (sec.detailed_record) html += `<div style="${S.discRecord}">${esc(sec.detailed_record)}</div>`;
+            if (sec.dialogue_highlights?.length > 0) {
+                html += `<div style="margin:6px 0;">`;
+                sec.dialogue_highlights.forEach(d => {
+                    html += `<div style="${S.dialogue}"><strong style="color:#4527a0;">${esc(d.speaker)}：</strong>${esc(d.content)}</div>`;
+                });
+                html += `</div>`;
+            }
+            if (sec.decisions_made?.length > 0) {
+                sec.decisions_made.forEach(d => {
+                    html += `<div style="font-size:12px;color:#2e7d32;margin:3px 0;">✓ ${esc(d)}</div>`;
+                });
+            }
+            html += `</div>`;
+        });
+        html += `</div>`;
+    }
+
+    // Key Decisions
+    const decisions = m.key_decisions || [];
+    if (decisions.length > 0) {
+        html += `<div style="${S.section}">`;
+        html += `<div style="${S.sectionTitle}">📌 关键决策</div>`;
+        decisions.forEach(d => {
+            html += `<div style="${S.decision}">`;
+            if (typeof d === 'string') {
+                html += `📌 ${esc(d)}`;
+            } else {
+                html += `<div style="font-weight:600;">📌 ${esc(d.decision)}</div>`;
+                if (d.reason) html += `<div style="font-size:12px;color:#555;margin-top:2px;">原因：${esc(d.reason)}</div>`;
+                if (d.impact) html += `<div style="font-size:12px;color:#555;">影响：${esc(d.impact)}</div>`;
+            }
+            html += `</div>`;
+        });
+        html += `</div>`;
+    }
+
+    // Risks
+    const risks = m.risks_and_concerns || [];
+    if (risks.length > 0) {
+        html += `<div style="${S.section}">`;
+        html += `<div style="${S.sectionTitle}">⚡ 风险与关注点</div>`;
+        risks.forEach(r => {
+            html += `<div style="${S.risk}">⚡ ${esc(r)}</div>`;
+        });
+        html += `</div>`;
+    }
+
+    // Footer
+    html += `<div style="text-align:center;font-size:11px;color:#999;margin-top:24px;padding-top:12px;border-top:1px solid #e0e0e0;">`;
+    html += `VoiceMeet AI 会议纪要 · 生成于 ${new Date().toLocaleString('zh-CN')}`;
+    html += `</div>`;
+
+    html += `</div>`;
+    return html;
+}
+
+function esc(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 
 // ================================================
 // Helpers
