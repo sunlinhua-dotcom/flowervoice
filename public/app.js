@@ -778,7 +778,9 @@ exportPdfBtn.addEventListener('click', async () => {
 
     // Create a hidden container
     const container = document.createElement('div');
-    container.style.cssText = 'position:fixed;top:0;left:0;width:210mm;z-index:-9999;opacity:0;pointer-events:none;';
+    // NOTE: html2canvas will drop elements with opacity: 0 or display: none!
+    // We use absolute positioning off-screen to hide it without breaking capture.
+    container.style.cssText = 'position:absolute;top:-9999px;left:-9999px;width:210mm;background:#ffffff;z-index:-9999;';
     container.innerHTML = pdfHtml;
     document.body.appendChild(container);
 

@@ -400,6 +400,20 @@ app.post('/api/process', upload.single('audio'), async (req, res) => {
     const filename = req.file.filename;
     const filePath = req.file.path;
 
+    // Step 0: Get audio duration to pass to prompt later
+    let audioDuration = 0;
+    try {
+      const durationStr = execSync(
+        `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`,
+        { encoding: 'utf-8' }
+      ).trim();
+      audioDuration = parseFloat(durationStr) || 0;
+      console.log(`[Process] Audio duration: ${(audioDuration / 60).toFixed(1)} min`);
+    } catch (e) {
+      console.log('[Process] Could not detect duration early');
+    }
+    const durationMinutes = audioDuration > 0 ? Math.ceil(audioDuration / 60) : 0;
+
     // Step 1: File uploaded
     sendProgress('upload', '文件上传完成', {
       filename: req.file.originalname,
@@ -407,7 +421,7 @@ app.post('/api/process', upload.single('audio'), async (req, res) => {
     });
 
     // Step 2: Transcribe
-    sendProgress('transcribe', '正在进行语音转写...');
+    sendProgress('transcribe', durationMinutes > 0 ? `音频时长 ${durationMinutes} 分钟，正在进行语音转写...` : '正在进行语音转写...');
 
     let transcription = '';
 
@@ -442,21 +456,7 @@ app.post('/api/process', upload.single('audio'), async (req, res) => {
 
       const ext = path.extname(filename).toLowerCase().replace('.', '');
 
-      // Step 1: Get audio duration
-      let audioDuration = 0;
-      try {
-        const durationStr = execSync(
-          `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`,
-          { encoding: 'utf-8' }
-        ).trim();
-        audioDuration = parseFloat(durationStr) || 0;
-        console.log(`[Process] Audio duration: ${(audioDuration / 60).toFixed(1)} min`);
-      } catch (e) {
-        audioDuration = 600; // assume 10 min if we can't detect
-        console.log('[Process] Could not detect duration, assuming 10 min');
-      }
-
-      sendProgress('transcribe', `音频时长 ${(audioDuration / 60).toFixed(0)} 分钟，正在压缩和分段处理...`);
+      sendProgress('transcribe', durationMinutes > 0 ? `音频超长 (${durationMinutes} 分钟)，正在压缩和分段处理...` : `音频过长，正在压缩和分段处理...`);
 
       // Step 2: Compress audio to 16kHz mono MP3 (much smaller, better for API)
       const compressedPath = filePath.replace(/\.[^.]+$/, '_compressed.mp3');
@@ -597,6 +597,11 @@ app.post('/api/process', upload.single('audio'), async (req, res) => {
     // Step 3: Summarize
     sendProgress('summarize', '正在生成会议记录...');
 
+    // Context-aware prompt injection
+    const durationPrompt = durationMinutes > 0
+      ? `\n\n[核心提示：提取的音频总时长为 ${durationMinutes} 分钟。请务必在输出的记录中，尽可能详尽地还原长达 ${durationMinutes} 分钟的详细讨论过程！不要过度压缩，不要遗漏内容，字数可以非常多！在 detailed_record 中分段或按时间轴展示。确保 duration 字段填写准确的时长。]`
+      : '';
+
     const summaryRes = await fetch(`${DASHSCOPE_BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -608,7 +613,7 @@ app.post('/api/process', upload.single('audio'), async (req, res) => {
         messages: [
           {
             role: 'system',
-            content: DETAILED_MEETING_PROMPT
+            content: DETAILED_MEETING_PROMPT + durationPrompt
           },
           {
             role: 'user',
